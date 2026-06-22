@@ -1,20 +1,19 @@
 from fastapi import FastAPI
 import uvicorn
 from dotenv import load_dotenv
-import os
 
-from router.webhook import GITHUB_TOKEN, router as webhook_router
+from router.webhook import router as webhook_router
+from routers.repos import router as repos_router
 
 load_dotenv()
 
-
-print(os.environ.get("GITHUB_TOKEN"))
-
 app = FastAPI()
 app.include_router(webhook_router)
+app.include_router(repos_router)
 
 
-uvicorn.run(app,host="localhost",port=8000)
+if __name__ == "__main__":
+    uvicorn.run(app, host="localhost", port=8000)
 
 
 

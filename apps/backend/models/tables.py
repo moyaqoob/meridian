@@ -20,7 +20,7 @@ class Repo(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
     github_repo_id = Column(Integer, unique=True, nullable=False)
-    full_name = Column(String, nullable=False)       # "owner/repo"
+    full_name = Column(String, nullable=False)
     default_branch = Column(String, nullable=False)
     ingest_status = Column(
         Enum("pending", "processing", "ready", "failed", name="ingest_status_enum"),
@@ -60,7 +60,7 @@ class Review(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     pr_id = Column(String, ForeignKey("prs.id"), nullable=False)
     summary = Column(Text, nullable=False)
-    structured_json = Column(Text, nullable=False)   # full ReviewOut as JSON string
+    structured_json = Column(Text, nullable=False)  
     model_version = Column(String, nullable=False)
     created_at = Column(DateTime, nullable=False)
     annotations = relationship("ReviewAnnotation", back_populates="review")

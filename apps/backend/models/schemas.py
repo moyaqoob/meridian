@@ -24,8 +24,6 @@ class ReviewOut(BaseModel):
     timings: Dict[str, float]  # stage -> duration_ms
 
 
-# --- SSE Events ---
-
 
 class StageUpdateEvent(BaseModel):
     stage: Literal["validation", "retrieval", "generation", "citation-mapping", "complete"]
