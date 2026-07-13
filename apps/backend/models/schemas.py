@@ -51,14 +51,56 @@ class ErrorEvent(BaseModel):
     retryable: bool
 
 
-# --- Ingestion ---
+# --- Auth ---
+
+
+class UserOut(BaseModel):
+    id: str
+    github_id: int
+    login: str
+
+
+class SessionOut(BaseModel):
+    authenticated: bool
+    user: Optional[UserOut] = None
+
+
+# --- Repos ---
+
+
+class RepoOut(BaseModel):
+    id: str
+    github_repo_id: int
+    full_name: str
+    default_branch: str
+    ingest_status: Literal["pending", "processing", "ready", "failed"]
+    files_ingested: Optional[int] = None
+    ingest_error: Optional[str] = None
+
+
+class ConnectRepoRequest(BaseModel):
+    full_name: str  # "owner/repo"
+
+
+class GitHubRepoOut(BaseModel):
+    github_repo_id: int
+    full_name: str
+    default_branch: str
+    private: bool
+    connected: bool
+
+
+class EmbedRepoRequest(BaseModel):
+    repo_id: str
+    repo_path: str
+
+
+# --- Ingestion (v1: sourced from Repo, not IngestionJob) ---
 
 
 class IngestionStatusOut(BaseModel):
-    job_id: str
-    status: Literal["pending", "running", "complete", "failed"]
+    repo_id: str
+    status: Literal["pending", "processing", "ready", "failed"]
     files_ingested: Optional[int] = None
-    current_step: Optional[str] = None
-    progress: Optional[float] = None  # 0.0 to 1.0
     error_message: Optional[str] = None
 

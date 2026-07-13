@@ -1,87 +1,101 @@
-from typing import List
+"""
+Ingestion: local-path full ingest with checksum upsert.
 
-from apps.backend.models.tables import CodeChunk  # adjust import if package root changes
+Locked decisions:
+- Progress on Repo (ingest_status + files_ingested)
+- Full ingest on connect; incremental on PR merge later
+"""
+
+from __future__ import annotations
+
+import hashlib
+import uuid
+from pathlib import Path
+
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+
+from models.tables import CodeChunk, Repo
+from services.chunking import iter_repo_files, parse_file
+from services.embedding import embed_batch_sync
 
 
-async def ingest_repo(repo_id: str, installation_id: str, full_name: str) -> None:
+def _checksum(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def embed_repo_from_path(repo: Repo, repo_path: str, db: Session) -> dict:
     """
-    Full ingestion pipeline for a connected repository.
-    Designed to be idempotent — safe to re-run on the same repo.
-    Unchanged files (same sha) are skipped via checksum dedup.
+    Full ingest from a local checkout.
+    Unchanged checksums skipped; orphan checksums removed.
     """
-    # The concrete GitHub, chunking, and embedding services will live alongside this
-    # module and be wired in once they are implemented.
-    from apps.backend.services import github, chunking, embedding  # local import to avoid cycles
+    root = Path(repo_path).resolve()
+    if not root.exists() or not root.is_dir():
+        raise HTTPException(status_code=400, detail=f"repo_path does not exist: {repo_path}")
 
-    # 1. Fetch file tree from GitHub API
-    files = await github.get_file_tree(installation_id, full_name)
+    tracked = db.get(Repo, repo.id)
+    if tracked is None:
+        raise HTTPException(status_code=404, detail=f"repo not found: {repo.id}")
 
-    # 2. Filter — skip vendor, test, generated, binary
-    files = [f for f in files if should_index_file(f.path, getattr(f, "language", ""))]
+    tracked.ingest_status = "processing"
+    tracked.ingest_error = None
+    db.commit()
 
-    # 3. Chunk each file using tree-sitter
-    chunks: List[CodeChunk] = []
-    for file in files:
-        content = await github.get_file_content(installation_id, full_name, file.path)
-        file_chunks = chunking.parse_file(content, file.path, getattr(file, "language", ""))
-        chunks.extend(file_chunks)
+    try:
+        files = iter_repo_files(root)
+        raw_chunks = []
+        for file_path, language in files:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+            raw_chunks.extend(
+                parse_file(content, file_path.relative_to(root).as_posix(), language)
+            )
 
-    # 4. Deduplicate — skip chunks whose checksum already exists in DB for this repo
-    new_chunks = dedup_by_checksum(repo_id, chunks)
+        chunk_by_checksum = {_checksum(c.content): c for c in raw_chunks}
+        existing = db.query(CodeChunk).filter(CodeChunk.repo_id == tracked.id).all()
+        existing_by_checksum = {row.checksum: row for row in existing}
 
-    # 5. Embed in batches of 100 — never one at a time
-    embeddings = await embedding.embed_batch(
-        texts=[c.content for c in new_chunks],
-        batch_size=100,
-    )
+        new_checksums = set(chunk_by_checksum)
+        old_checksums = set(existing_by_checksum)
+        to_insert = new_checksums - old_checksums
+        to_delete = old_checksums - new_checksums
 
-    # 6. Upsert into code_chunks
-    for chunk, vector in zip(new_chunks, embeddings):
-        upsert_chunk(repo_id=repo_id, chunk=chunk, embedding=vector)
+        if to_delete:
+            db.query(CodeChunk).filter(
+                CodeChunk.repo_id == tracked.id,
+                CodeChunk.checksum.in_(to_delete),
+            ).delete(synchronize_session=False)
 
-    # 7. Mark repo ready
-    update_repo_status(repo_id, "ready")
+        new_chunks = [chunk_by_checksum[c] for c in to_insert]
+        embeddings = embed_batch_sync([c.content for c in new_chunks])
 
+        for chunk, vector in zip(new_chunks, embeddings):
+            db.add(
+                CodeChunk(
+                    id=str(uuid.uuid4()),
+                    repo_id=tracked.id,
+                    file_path=chunk.file_path,
+                    start_line=chunk.start_line,
+                    end_line=chunk.end_line,
+                    language=chunk.language,
+                    content=chunk.content,
+                    checksum=_checksum(chunk.content),
+                    embedding=vector,
+                )
+            )
 
-def should_index_file(path: str, language: str) -> bool:
-    """
-    Conservative filter. When in doubt, skip.
-    We want signal-dense chunks, not noise-dense chunks.
-    """
-    SKIP_DIRS = {"node_modules", "vendor", ".git", "dist", "build", "__pycache__"}
-    SKIP_EXTENSIONS = {".lock", ".sum", ".mod", ".min.js", ".min.css"}
-    SUPPORTED_LANGUAGES = {"python", "typescript", "javascript", "go", "java", "rust"}
+        tracked.files_ingested = len(files)
+        tracked.ingest_status = "ready"
+        db.commit()
 
-    parts = path.split("/")
-    if any(part in SKIP_DIRS for part in parts):
-        return False
-    if any(path.endswith(ext) for ext in SKIP_EXTENSIONS):
-        return False
-    if language not in SUPPORTED_LANGUAGES:
-        return False
-    return True
-
-
-def dedup_by_checksum(repo_id: str, chunks: List[CodeChunk]) -> List[CodeChunk]:
-    """
-    Placeholder for checksum-based deduplication.
-    Replace with a real implementation that queries the database for existing checksums.
-    """
-    return chunks
-
-
-def upsert_chunk(repo_id: str, chunk: CodeChunk, embedding: List[float]) -> None:
-    """
-    Placeholder for upserting a chunk + embedding into the database.
-    Implement using your SQLAlchemy session and pgvector mapping.
-    """
-    raise NotImplementedError("upsert_chunk must be implemented against the database layer.")
-
-
-def update_repo_status(repo_id: str, status: str) -> None:
-    """
-    Placeholder for updating a repo's ingest_status.
-    Implement using your SQLAlchemy session.
-    """
-    raise NotImplementedError("update_repo_status must be implemented against the database layer.")
-
+        return {
+            "files_ingested": len(files),
+            "chunks_total": len(chunk_by_checksum),
+            "chunks_inserted": len(to_insert),
+            "chunks_removed": len(to_delete),
+            "chunks_unchanged": len(new_checksums & old_checksums),
+        }
+    except Exception as exc:
+        tracked.ingest_status = "failed"
+        tracked.ingest_error = str(exc)
+        db.commit()
+        raise

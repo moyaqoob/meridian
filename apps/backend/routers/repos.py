@@ -1,260 +1,168 @@
-import hashlib
-import os
-import uuid
-from dataclasses import dataclass
-from pathlib import Path
+"""
+Repo management: list connected repos, browse GitHub repos, connect, local embed.
+"""
 
-from fastapi import APIRouter, HTTPException
-from openai import OpenAI
-from pydantic import BaseModel
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
-from tree_sitter import Language, Parser
+from __future__ import annotations
 
-from models.tables import Base, CodeChunk, Repo
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from core.database import get_db
+from models.schemas import (
+    ConnectRepoRequest,
+    EmbedRepoRequest,
+    GitHubRepoOut,
+    IngestionStatusOut,
+    RepoOut,
+)
+from models.tables import Repo, User
+from routers.auth import decrypt_access_token, get_current_user
+from services import github as github_service
+from services.ingestion import embed_repo_from_path
 
 router = APIRouter(prefix="/api/repos", tags=["repos"])
 
-SKIP_DIRS = {"node_modules", "vendor", ".git", "dist", "build", "__pycache__", ".venv"}
-SKIP_EXTENSIONS = {".lock", ".sum", ".mod", ".min.js", ".min.css"}
-SUPPORTED_LANGUAGES = {"python", "typescript", "javascript"}
-EXT_TO_LANGUAGE = {
-    ".py": "python",
-    ".ts": "typescript",
-    ".tsx": "typescript",
-    ".js": "javascript",
-    ".jsx": "javascript",
-}
-TARGET_NODE_TYPES = {
-    "python": {"function_definition", "class_definition", "decorated_definition"},
-    "typescript": {"function_declaration", "method_definition", "class_declaration"},
-    "javascript": {"function_declaration", "method_definition", "class_declaration"},
-}
 
-_parsers: dict[str, Parser] = {}
+def _repo_out(repo: Repo) -> RepoOut:
+    return RepoOut(
+        id=repo.id,
+        github_repo_id=repo.github_repo_id,
+        full_name=repo.full_name,
+        default_branch=repo.default_branch,
+        ingest_status=repo.ingest_status,  # type: ignore[arg-type]
+        files_ingested=repo.files_ingested,
+        ingest_error=repo.ingest_error,
+    )
 
 
-@dataclass
-class RawChunk:
-    content: str
-    file_path: str
-    start_line: int
-    end_line: int
-    language: str
+@router.get("", response_model=list[RepoOut])
+def list_connected_repos(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[RepoOut]:
+    """List repos this user has connected to Meridian."""
+    rows = (
+        db.query(Repo)
+        .filter(Repo.user_id == user.id)
+        .order_by(Repo.full_name.asc())
+        .all()
+    )
+    return [_repo_out(row) for row in rows]
 
 
-class EmbedRepoRequest(BaseModel):
-    repo_id: str
-    repo_path: str
+@router.get("/available", response_model=list[GitHubRepoOut])
+async def list_available_github_repos(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[GitHubRepoOut]:
+    """
+    List GitHub repos the user can access, with connected=true if already in Meridian.
+    Use this UI to pick a repo to connect.
+    """
+    token = decrypt_access_token(user.encrypted_access_token)
+    remote = await github_service.list_user_repos(token)
 
+    connected_ids = {
+        row[0]
+        for row in db.query(Repo.github_repo_id).filter(Repo.user_id == user.id).all()
+    }
 
-def _get_database_url() -> str:
-    database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
-        raise HTTPException(status_code=500, detail="DATABASE_URL is not set")
-    return database_url
-
-
-def _get_openai_client() -> OpenAI:
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not set")
-    return OpenAI(api_key=api_key)
-
-
-def _get_session() -> Session:
-    engine = create_engine(_get_database_url())
-    Base.metadata.create_all(engine)
-    return sessionmaker(bind=engine)()
-
-
-def _get_parser(language: str) -> Parser | None:
-    if language in _parsers:
-        return _parsers[language]
-
-    try:
-        if language == "python":
-            import tree_sitter_python as lang_mod
-        elif language == "typescript":
-            import tree_sitter_typescript as lang_mod
-        elif language == "javascript":
-            import tree_sitter_javascript as lang_mod
-        else:
-            return None
-
-        parser = Parser(Language(lang_mod.language()))
-        _parsers[language] = parser
-        return parser
-    except Exception:
-        return None
-
-
-def should_index_file(path: str, language: str) -> bool:
-    parts = Path(path).parts
-    if any(part in SKIP_DIRS for part in parts):
-        return False
-    if any(path.endswith(ext) for ext in SKIP_EXTENSIONS):
-        return False
-    if language not in SUPPORTED_LANGUAGES:
-        return False
-    return True
-
-
-def _checksum(content: str) -> str:
-    return hashlib.sha256(content.encode("utf-8")).hexdigest()
-
-
-def _sliding_window_chunks(content: str, file_path: str, language: str) -> list[RawChunk]:
-    lines = content.splitlines()
-    window = 50
-    overlap = 10
-    chunks: list[RawChunk] = []
-
-    for start in range(0, len(lines), max(window - overlap, 1)):
-        block = "\n".join(lines[start : start + window])
-        if len(block.strip()) < 20:
+    out: list[GitHubRepoOut] = []
+    for item in remote:
+        github_id = item.get("id")
+        full_name = item.get("full_name")
+        if github_id is None or not full_name:
             continue
-        chunks.append(
-            RawChunk(
-                content=block,
-                file_path=file_path,
-                start_line=start + 1,
-                end_line=min(start + window, len(lines)),
-                language=language,
+        out.append(
+            GitHubRepoOut(
+                github_repo_id=int(github_id),
+                full_name=str(full_name),
+                default_branch=str(item.get("default_branch") or "main"),
+                private=bool(item.get("private")),
+                connected=int(github_id) in connected_ids,
             )
         )
-
-    return chunks
-
-
-def _walk_meaningful_nodes(node, language: str):
-    targets = TARGET_NODE_TYPES.get(language, set())
-    if node.type in targets:
-        yield node
-        return
-
-    for child in node.children:
-        yield from _walk_meaningful_nodes(child, language)
+    return out
 
 
-def parse_file(content: str, file_path: str, language: str) -> list[RawChunk]:
-    parser = _get_parser(language)
-    if parser is None:
-        return _sliding_window_chunks(content, file_path, language)
+@router.post("/connect", response_model=RepoOut)
+async def connect_repo(
+    body: ConnectRepoRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RepoOut:
+    """
+    Connect a GitHub repo to Meridian (single owner for v1).
+    Creates a Repo row with ingest_status=pending.
+    Indexing: call POST /api/repos/embed with a local checkout path for now.
+    """
+    full_name = body.full_name.strip()
+    if "/" not in full_name or full_name.count("/") != 1:
+        raise HTTPException(status_code=400, detail="full_name must be owner/repo")
 
-    tree = parser.parse(content.encode("utf-8"))
-    chunks: list[RawChunk] = []
+    token = decrypt_access_token(user.encrypted_access_token)
+    remote = await github_service.get_repo(token, full_name)
 
-    for node in _walk_meaningful_nodes(tree.root_node, language):
-        chunk_text = content[node.start_byte : node.end_byte]
-        if len(chunk_text.strip()) < 20:
-            continue
-        chunks.append(
-            RawChunk(
-                content=chunk_text,
-                file_path=file_path,
-                start_line=node.start_point[0] + 1,
-                end_line=node.end_point[0] + 1,
-                language=language,
+    github_repo_id = int(remote["id"])
+    default_branch = str(remote.get("default_branch") or "main")
+
+    existing = (
+        db.query(Repo)
+        .filter(Repo.github_repo_id == github_repo_id)
+        .one_or_none()
+    )
+    if existing is not None:
+        if existing.user_id != user.id:
+            raise HTTPException(
+                status_code=409,
+                detail="Repo already connected by another Meridian user",
             )
-        )
+        return _repo_out(existing)
 
-    if not chunks:
-        return _sliding_window_chunks(content, file_path, language)
-
-    return chunks
-
-
-def _iter_repo_files(repo_path: Path) -> list[tuple[Path, str]]:
-    files: list[tuple[Path, str]] = []
-
-    for path in repo_path.rglob("*"):
-        if not path.is_file():
-            continue
-
-        rel_path = path.relative_to(repo_path).as_posix()
-        language = EXT_TO_LANGUAGE.get(path.suffix.lower())
-        if not language:
-            continue
-        if not should_index_file(rel_path, language):
-            continue
-
-        files.append((path, language))
-
-    return files
+    repo = Repo(
+        user_id=user.id,
+        github_repo_id=github_repo_id,
+        full_name=full_name,
+        default_branch=default_branch,
+        ingest_status="pending",
+    )
+    db.add(repo)
+    db.commit()
+    db.refresh(repo)
+    return _repo_out(repo)
 
 
-def _embed_batch(client: OpenAI, texts: list[str], batch_size: int = 100) -> list[list[float]]:
-    if not texts:
-        return []
-
-    embeddings: list[list[float]] = []
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i : i + batch_size]
-        response = client.embeddings.create(
-            model="text-embedding-3-small",
-            input=batch,
-        )
-        embeddings.extend(item.embedding for item in response.data)
-
-    return embeddings
-
-
-def embed_repo(repository: Repo, repo_path: str, session: Session) -> int:
-    root = Path(repo_path).resolve()
-    if not root.exists() or not root.is_dir():
-        raise HTTPException(status_code=400, detail=f"repo_path does not exist: {repo_path}")
-
-    repo = session.get(Repo, repository.id)
-    if repo is None:
-        raise HTTPException(status_code=404, detail=f"repo not found: {repository.id}")
-
-    repo.ingest_status = "processing"
-    session.commit()
-
-    raw_chunks: list[RawChunk] = []
-    for file_path, language in _iter_repo_files(root):
-        content = file_path.read_text(encoding="utf-8", errors="ignore")
-        raw_chunks.extend(parse_file(content, file_path.relative_to(root).as_posix(), language))
-
-    client = _get_openai_client()
-    embeddings = _embed_batch(client, [chunk.content for chunk in raw_chunks])
-
-    session.query(CodeChunk).filter(CodeChunk.repo_id == repo.id).delete()
-
-    for chunk, vector in zip(raw_chunks, embeddings):
-        session.add(
-            CodeChunk(
-                id=str(uuid.uuid4()),
-                repo_id=repo.id,
-                file_path=chunk.file_path,
-                start_line=chunk.start_line,
-                end_line=chunk.end_line,
-                language=chunk.language,
-                content=chunk.content,
-                checksum=_checksum(chunk.content),
-                embedding=vector,
-            )
-        )
-
-    repo.ingest_status = "ready"
-    session.commit()
-    return len(raw_chunks)
+@router.get("/{repo_id}/ingest", response_model=IngestionStatusOut)
+def get_ingest_status(
+    repo_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> IngestionStatusOut:
+    """Poll ingest status for a connected repo."""
+    repo = db.get(Repo, repo_id)
+    if repo is None or repo.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Repo not found")
+    return IngestionStatusOut(
+        repo_id=repo.id,
+        status=repo.ingest_status,  # type: ignore[arg-type]
+        files_ingested=repo.files_ingested,
+        error_message=repo.ingest_error,
+    )
 
 
 @router.post("/embed")
-def embed_repo_endpoint(body: EmbedRepoRequest) -> dict:
-    session = _get_session()
-    try:
-        repository = session.get(Repo, body.repo_id)
-        if repository is None:
-            raise HTTPException(status_code=404, detail=f"repo not found: {body.repo_id}")
+def embed_local_repo(
+    body: EmbedRepoRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Run full local-path ingest (tree-sitter → embed → checksum upsert).
+    Temporary until GitHub-backed clone ingest is wired.
+    """
+    repo = db.get(Repo, body.repo_id)
+    if repo is None or repo.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Repo not found")
 
-        chunks_embedded = embed_repo(repository, body.repo_path, session)
-        return {
-            "status": "ok",
-            "repo_id": body.repo_id,
-            "chunks_embedded": chunks_embedded,
-        }
-    finally:
-        session.close()
+    stats = embed_repo_from_path(repo, body.repo_path, db)
+    return {"status": "ok", "repo_id": body.repo_id, **stats}

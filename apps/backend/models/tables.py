@@ -18,7 +18,7 @@ class User(Base):
 class Repo(Base):
     __tablename__ = "repos"
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)  # v1: single owner
     github_repo_id = Column(Integer, unique=True, nullable=False)
     full_name = Column(String, nullable=False)
     default_branch = Column(String, nullable=False)
@@ -27,6 +27,8 @@ class Repo(Base):
         nullable=False,
         default="pending"
     )
+    files_ingested = Column(Integer, nullable=True)
+    ingest_error = Column(Text, nullable=True)
 
 class CodeChunk(Base):
     __tablename__ = "code_chunks"
@@ -60,7 +62,7 @@ class Review(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     pr_id = Column(String, ForeignKey("prs.id"), nullable=False)
     summary = Column(Text, nullable=False)
-    structured_json = Column(Text, nullable=False)  
+    structured_json = Column(Text, nullable=False)
     model_version = Column(String, nullable=False)
     created_at = Column(DateTime, nullable=False)
     annotations = relationship("ReviewAnnotation", back_populates="review")
@@ -79,6 +81,8 @@ class ReviewAnnotation(Base):
     )
     category = Column(String, nullable=False)        # "performance", "security", etc.
 
+# Deferred: v1 tracks ingest on Repo (ingest_status + files_ingested).
+# Reintroduce when you need job history / concurrent re-ingests.
 class IngestionJob(Base):
     __tablename__ = "ingestion_jobs"
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
