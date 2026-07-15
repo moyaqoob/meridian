@@ -1,56 +1,35 @@
 import { FadeUp } from "./fade-up"
-import styles from "./landing.module.css"
+
+const stats = [
+  ["91%", "prototype confidence gate"],
+  ["19", "references traced before comment"],
+  ["4", "review agents in the pipeline"],
+  ["0", "new workflow steps for your team"],
+]
 
 export function LandingStats() {
   return (
-    <section className={styles.section}>
-      <div className={styles.wrap}>
+    <section className="relative px-4 py-24 md:py-32">
+      <div className="mx-auto max-w-[1180px]">
         <FadeUp>
-          <div className={styles.sectionHead}>
-            <div className={styles.sectionLabel}>Where Meridian is today</div>
-            <h2 className={`${styles.display} ${styles.sectionTitle}`}>
-              Early, and honest about it.
-            </h2>
-            <p className={styles.sectionBody}>
-              Meridian is in active development against real repos. These are
-              the numbers we are building toward measuring publicly, filled in
-              as they are real, not before.
-            </p>
+          <div className="grid gap-5 md:grid-cols-4">
+            {stats.map(([value, label], index) => (
+              <div
+                key={label}
+                className={`rounded-[28px] border border-white/10 bg-white/[0.045] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] ${
+                  index === 1 ? "md:-translate-y-6" : index === 2 ? "md:translate-y-8" : ""
+                }`}
+              >
+                <div className="rounded-[22px] border border-white/8 bg-[#080b0d] px-6 py-7">
+                  <div className="font-[family-name:var(--font-display)] text-[clamp(38px,5vw,70px)] font-semibold leading-none tracking-[-0.07em] text-white">
+                    {value}
+                  </div>
+                  <p className="mt-4 max-w-[180px] text-sm leading-6 text-[var(--text-muted)]">{label}</p>
+                </div>
+              </div>
+            ))}
           </div>
         </FadeUp>
-        <FadeUp>
-          <div className={styles.statGrid}>
-            <div className={styles.statCell}>
-              <div className={`${styles.statNum} ${styles.statNumPlaceholder}`}>
-                [ TBD ]
-              </div>
-              <div className={styles.statLabel}>
-                PRs reviewed in active testing
-              </div>
-            </div>
-            <div className={styles.statCell}>
-              <div className={`${styles.statNum} ${styles.statNumPlaceholder}`}>
-                [ TBD ]
-              </div>
-              <div className={styles.statLabel}>
-                Cross-file issues caught pre-merge
-              </div>
-            </div>
-            <div className={styles.statCell}>
-              <div className={styles.statNum}>&lt; 5 min</div>
-              <div className={styles.statLabel}>To install on a new repo</div>
-            </div>
-            <div className={styles.statCell}>
-              <div className={styles.statNum}>0</div>
-              <div className={styles.statLabel}>
-                Workflow changes required
-              </div>
-            </div>
-          </div>
-        </FadeUp>
-        <p className={styles.statNote}>
-          {"// Replace [TBD] once you have real numbers from repos you've tested on."}
-        </p>
       </div>
     </section>
   )

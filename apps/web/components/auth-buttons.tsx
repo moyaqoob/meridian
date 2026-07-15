@@ -1,7 +1,8 @@
 "use client"
 
-import { signIn, signOut } from "next-auth/react"
+import { useRouter } from "next/navigation"
 import type { ReactNode } from "react"
+import { endpoints } from "@/lib/api/endpoints"
 
 type SignInButtonProps = {
   className?: string
@@ -10,12 +11,18 @@ type SignInButtonProps = {
 }
 
 export function SignInButton({
-  className = "github-btn",
+  className = "",
   label = "Sign in with GitHub",
   children,
 }: SignInButtonProps) {
   return (
-    <button onClick={() => signIn("github")} className={className} type="button">
+    <a
+      href={endpoints.auth.github()}
+      className={
+        className ||
+        "inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-[var(--radius)] border border-[var(--accent-dim)] bg-transparent px-[18px] py-2.5 font-[family-name:var(--font-mono)] text-[13px] tracking-wide text-[var(--accent)] no-underline transition-colors hover:border-[var(--accent)] hover:bg-[rgba(200,155,92,0.08)]"
+      }
+    >
       {children ?? (
         <>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
@@ -24,13 +31,25 @@ export function SignInButton({
           {label}
         </>
       )}
-    </button>
+    </a>
   )
 }
 
 export function SignOutButton() {
+  const router = useRouter()
+
+  async function handleLogout() {
+    await fetch(endpoints.auth.logout(), { method: "POST", credentials: "include" })
+    router.push("/")
+    router.refresh()
+  }
+
   return (
-    <button onClick={() => signOut({ callbackUrl: "/" })} className="ghost-btn" type="button">
+    <button
+      onClick={handleLogout}
+      type="button"
+      className="cursor-pointer rounded-lg border border-[var(--border)] bg-transparent px-6 py-2.5 text-sm font-medium text-[var(--foreground)] transition-colors hover:border-white/20 hover:bg-white/5"
+    >
       Sign out
     </button>
   )

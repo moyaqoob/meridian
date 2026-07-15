@@ -21,7 +21,7 @@ class ReviewOut(BaseModel):
     pr_type: Literal["feat", "fix", "refactor", "chore"]
     findings: List[ReviewFinding]
     model_version: str
-    timings: Dict[str, float]  # stage -> duration_ms
+    timings: Dict[str, float] 
 
 
 
@@ -93,6 +93,33 @@ class GitHubRepoOut(BaseModel):
 class EmbedRepoRequest(BaseModel):
     repo_id: str
     repo_path: str
+
+
+class PullRequestOut(BaseModel):
+    number: int
+    title: str
+    state: str
+    author: str
+    html_url: str
+    updated_at: str
+    base_branch: str
+    head_branch: str
+    additions: int = 0
+    deletions: int = 0
+    changed_files: int = 0
+
+
+class PullFileOut(BaseModel):
+    filename: str
+    status: str
+    additions: int
+    deletions: int
+
+
+class PullRequestDetailOut(PullRequestOut):
+    body: str | None = None
+    diff: str
+    files: List[PullFileOut]
 
 
 # --- Ingestion (v1: sourced from Repo, not IngestionJob) ---

@@ -7,20 +7,22 @@ from pathlib import Path
 
 from tree_sitter import Language, Parser
 
-SKIP_DIRS = {"node_modules", "vendor", ".git", "dist", "build", "__pycache__", ".venv"}
+SKIP_DIRS = {"node_modules", "vendor", ".git", "dist", "build", "__pycache__", ".venv", "target"}
 SKIP_EXTENSIONS = {".lock", ".sum", ".mod", ".min.js", ".min.css"}
-SUPPORTED_LANGUAGES = {"python", "typescript", "javascript"}
+SUPPORTED_LANGUAGES = {"python", "typescript", "javascript", "rust"}
 EXT_TO_LANGUAGE = {
     ".py": "python",
     ".ts": "typescript",
     ".tsx": "typescript",
     ".js": "javascript",
     ".jsx": "javascript",
+    ".rs": "rust",
 }
 TARGET_NODE_TYPES = {
     "python": {"function_definition", "class_definition", "decorated_definition"},
     "typescript": {"function_declaration", "method_definition", "class_declaration"},
     "javascript": {"function_declaration", "method_definition", "class_declaration"},
+    "rust": {"function_item", "impl_item", "struct_item", "enum_item", "trait_item"},
 }
 
 _parsers: dict[str, Parser] = {}
@@ -57,6 +59,8 @@ def _get_parser(language: str) -> Parser | None:
             import tree_sitter_typescript as lang_mod
         elif language == "javascript":
             import tree_sitter_javascript as lang_mod
+        elif language == "rust":
+            import tree_sitter_rust as lang_mod
         else:
             return None
 
@@ -136,3 +140,4 @@ def iter_repo_files(repo_path: Path) -> list[tuple[Path, str]]:
             continue
         files.append((path, language))
     return files
+

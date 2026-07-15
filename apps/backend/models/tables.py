@@ -3,6 +3,8 @@ from sqlalchemy.orm import DeclarativeBase, relationship
 from pgvector.sqlalchemy import Vector
 import uuid
 
+from core.config import settings
+
 class Base(DeclarativeBase):
     pass
 
@@ -29,6 +31,7 @@ class Repo(Base):
     )
     files_ingested = Column(Integer, nullable=True)
     ingest_error = Column(Text, nullable=True)
+    user = relationship("User", back_populates="repos")
 
 class CodeChunk(Base):
     __tablename__ = "code_chunks"
@@ -40,7 +43,7 @@ class CodeChunk(Base):
     language = Column(String, nullable=False)
     content = Column(Text, nullable=False)
     checksum = Column(String, nullable=False)
-    embedding = Column(Vector(1536), nullable=False)
+    embedding = Column(Vector(settings.embedding_dimensions), nullable=False)
 
 class PR(Base):
     __tablename__ = "prs"
@@ -80,6 +83,7 @@ class ReviewAnnotation(Base):
         nullable=False
     )
     category = Column(String, nullable=False)        # "performance", "security", etc.
+    review = relationship("Review", back_populates="annotations")
 
 # Deferred: v1 tracks ingest on Repo (ingest_status + files_ingested).
 # Reintroduce when you need job history / concurrent re-ingests.
@@ -107,4 +111,4 @@ class AcceptedPR(Base):
     diff = Column(Text, nullable=False)
     review_summary = Column(Text, nullable=False)
     merged_at = Column(DateTime, nullable=False)
-    embedding = Column(Vector(1536), nullable=True)
+    embedding = Column(Vector(settings.embedding_dimensions), nullable=True)

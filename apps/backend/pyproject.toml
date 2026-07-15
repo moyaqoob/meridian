@@ -12,6 +12,7 @@ dependencies = [
     "itsdangerous>=2.2.0",
     "openai>=1.68.0",
     "pgvector>=0.4.0",
+    "psycopg[binary]>=3.3.4",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.8.1",
     "python-dotenv>=1.2.2",
@@ -20,6 +21,21 @@ dependencies = [
     "tree-sitter>=0.24.0",
     "tree-sitter-javascript>=0.23.1",
     "tree-sitter-python>=0.23.6",
+    "tree-sitter-rust>=0.24.0",
     "tree-sitter-typescript>=0.23.2",
     "uvicorn[standard]>=0.34.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
 ]

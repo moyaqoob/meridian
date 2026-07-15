@@ -35,7 +35,7 @@ def _repo_out(repo: Repo) -> RepoOut:
     )
 
 
-@router.get("", response_model=list[RepoOut])
+@router.get("/", response_model=list[RepoOut])
 def list_connected_repos(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),

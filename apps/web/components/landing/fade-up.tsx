@@ -1,7 +1,9 @@
 "use client"
 
 import { useEffect, useRef, type ReactNode } from "react"
-import styles from "./landing.module.css"
+
+const FADE_UP_IN =
+  "opacity-100 translate-y-0 transition-[opacity,transform] duration-900 ease-[cubic-bezier(0.32,0.72,0,1)]"
 
 export function FadeUp({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -14,11 +16,8 @@ export function FadeUp({ children }: { children: ReactNode }) {
       "(prefers-reduced-motion: reduce)",
     ).matches
 
-    const inClass = styles.fadeUpIn
-    if (!inClass) return
-
     if (prefersReduced) {
-      node.classList.add(inClass)
+      node.classList.add(...FADE_UP_IN.split(" "))
       return
     }
 
@@ -26,7 +25,7 @@ export function FadeUp({ children }: { children: ReactNode }) {
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            entry.target.classList.add(inClass)
+            entry.target.classList.add(...FADE_UP_IN.split(" "))
           }
         }
       },
@@ -38,7 +37,10 @@ export function FadeUp({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <div ref={ref} className={styles.fadeUp}>
+    <div
+      ref={ref}
+      className="translate-y-8 opacity-0 transition-[opacity,transform] duration-900 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:translate-y-0 motion-reduce:opacity-100 motion-reduce:transition-none"
+    >
       {children}
     </div>
   )

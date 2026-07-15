@@ -1,23 +1,23 @@
 import type { Metadata } from "next"
-import { Fraunces, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google"
+import localFont from "next/font/local"
 import "./globals.css"
 
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  variable: "--font-display",
-  axes: ["opsz"],
-})
-
-const plexSans = IBM_Plex_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
+const geistSans = localFont({
+  src: "./fonts/GeistVF.woff",
   variable: "--font-sans",
+  display: "swap",
 })
 
-const plexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
+const geistDisplay = localFont({
+  src: "./fonts/GeistVF.woff",
+  variable: "--font-display",
+  display: "swap",
+})
+
+const geistMono = localFont({
+  src: "./fonts/GeistMonoVF.woff",
   variable: "--font-mono",
+  display: "swap",
 })
 
 export const metadata: Metadata = {
@@ -34,7 +34,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${fraunces.variable} ${plexSans.variable} ${plexMono.variable}`}
+        className={`${geistSans.variable} ${geistDisplay.variable} ${geistMono.variable}`}
       >
         {children}
       </body>

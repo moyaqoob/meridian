@@ -26,19 +26,26 @@ class Settings(BaseSettings):
     # Redis
     redis_url: SecretStr
 
-    # GitHub App
-    github_app_id: str
-    github_app_private_key: SecretStr
+
     github_webhook_secret: SecretStr
     github_client_id: str
     github_client_secret: SecretStr
 
     # AI providers
-    openai_api_key: SecretStr
+    nvidia_api_key: SecretStr
+    nvidia_api_base_url: str = "https://integrate.api.nvidia.com/v1"
+    embedding_model: str = "nvidia/nv-embed-v1"
+    embedding_dimensions: int = 4096
+    openai_api_key: SecretStr | None = None
     anthropic_api_key: SecretStr
 
     # Security
+    # Fernet symmetric key — encrypts GitHub access tokens at rest in Postgres.
+    # Not an API key; generate once locally and keep stable (rotating invalidates stored tokens).
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # Equivalent: base64.urlsafe_b64encode(os.urandom(32)).decode()
     fernet_key: SecretStr
+    # Signs HttpOnly session cookies (itsdangerous URLSafeTimedSerializer).
     session_secret: SecretStr
 
     # Sessions
