@@ -126,13 +126,12 @@ export function LandingHero() {
                       {diffRows.map((row) => (
                         <div
                           key={row}
-                          className={`rounded-xl border px-3 py-2 ${
-                            row.startsWith("+")
+                          className={`rounded-xl border px-3 py-2 ${row.startsWith("+")
                               ? "border-[rgba(125,245,212,0.16)] bg-[rgba(125,245,212,0.07)] text-[var(--accent-strong)]"
                               : row.startsWith("-")
                                 ? "border-[rgba(255,138,154,0.16)] bg-[rgba(255,138,154,0.07)] text-[var(--danger)]"
                                 : "border-white/10 bg-white/[0.035] text-white/62"
-                          }`}
+                            }`}
                         >
                           {row}
                         </div>
@@ -179,13 +178,12 @@ export function LandingHero() {
                         >
                           <div className="mb-3 flex items-center justify-between gap-3">
                             <span
-                              className={`rounded-full px-2 py-1 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.12em] ${
-                                level === "critical"
+                              className={`rounded-full px-2 py-1 font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.12em] ${level === "critical"
                                   ? "bg-[rgba(255,138,154,0.12)] text-[var(--danger)]"
                                   : level === "medium"
                                     ? "bg-[rgba(246,193,119,0.12)] text-[var(--warning)]"
                                     : "bg-[rgba(125,245,212,0.1)] text-[var(--accent)]"
-                              }`}
+                                }`}
                             >
                               {level}
                             </span>

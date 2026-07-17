@@ -56,10 +56,24 @@ def test_github_oauth_start_redirects(client: TestClient) -> None:
     assert "client_id=test-github-client-id" in location
     assert "scope=repo" in location
     assert "state=" in location
+    assert "redirect_uri=" in location
+    assert "api%2Fauth%2Fcallback%2Fgithub" in location
     fake_redis.setex.assert_called_once()
 
 
 def test_github_callback_rejects_bad_state(client: TestClient) -> None:
+    fake_redis = MagicMock()
+    fake_redis.get.return_value = None
+    with patch("routers.auth._redis", return_value=fake_redis):
+        response = client.get(
+            "/api/auth/callback/github",
+            params={"code": "abc", "state": "bad"},
+            follow_redirects=False,
+        )
+    assert response.status_code == 400
+
+
+def test_github_callback_alias_rejects_bad_state(client: TestClient) -> None:
     fake_redis = MagicMock()
     fake_redis.get.return_value = None
     with patch("routers.auth._redis", return_value=fake_redis):
