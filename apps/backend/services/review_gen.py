@@ -1,5 +1,5 @@
 """
-Review generation: prompt + Claude stream → ReviewOut JSON.
+Review generation: prompt + NVIDIA stream → ReviewOut JSON.
 
 Prompt structure is load-bearing. Citations must use [CHUNK_ID: N].
 """
@@ -12,24 +12,22 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-import anthropic
+from openai import AsyncOpenAI
 from pydantic import ValidationError
 
 from core.config import settings
 from models.schemas import ReviewOut
 from models.tables import CodeChunk
 
-MODEL_VERSION = "claude-sonnet-4-6"
-
 SYSTEM_PROMPT = """
 You are a senior software engineer performing a code review.
 You have access to relevant context from the codebase retrieved specifically for this PR.
 
 Your review must:
-1. Focus on correctness, security, performance, and maintainability — in that order
+1. Focus on correctness, security, performance, and maintainability - in that order
 2. Be specific: reference exact code, not vague observations
-3. When referencing a code chunk, cite it as [CHUNK_ID: N] — never invent line numbers
-4. Return a valid JSON object matching this schema — nothing else:
+3. When referencing a code chunk, cite it as [CHUNK_ID: N] - never invent line numbers
+4. Return a valid JSON object matching this schema - nothing else:
 {
   "summary": string,
   "pr_type": "feat" | "fix" | "refactor" | "chore",
@@ -115,11 +113,18 @@ def parse_review_json(response: str, *, pr_id: str) -> ReviewOut:
             summary=str(data.get("summary") or ""),
             pr_type=data.get("pr_type") or "chore",
             findings=findings,
-            model_version=MODEL_VERSION,
+            model_version=settings.llm_model,
             timings={},
         )
     except (json.JSONDecodeError, ValidationError, TypeError, ReviewParseError) as exc:
         raise ReviewParseError(f"Failed to parse review JSON: {exc}") from exc
+
+
+def _nvidia_client() -> AsyncOpenAI:
+    return AsyncOpenAI(
+        api_key=settings.nvidia_api_key.get_secret_value(),
+        base_url=settings.nvidia_api_base_url,
+    )
 
 
 async def generate_review(
@@ -130,7 +135,7 @@ async def generate_review(
     on_chunk: OnChunk | None = None,
 ) -> ReviewOut:
     """
-    Assemble the prompt, stream Claude, parse ReviewOut.
+    Assemble the prompt, stream NVIDIA chat completions, parse ReviewOut.
     on_chunk is optional (SSE wiring lives in pipeline_events later).
     """
     context_block = format_chunks_for_prompt(chunks)
@@ -148,22 +153,28 @@ Review this PR. Return only a valid JSON object matching the schema in the syste
 Cite code references using [CHUNK_ID: N] syntax.
 """
 
-    client = anthropic.AsyncAnthropic(
-        api_key=settings.anthropic_api_key.get_secret_value(),
+    client = _nvidia_client()
+    stream = await client.chat.completions.create(
+        model=settings.llm_model,
+        max_tokens=4096,
+        stream=True,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ],
     )
 
     full_response = ""
-    async with client.messages.stream(
-        model=MODEL_VERSION,
-        max_tokens=4096,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}],
-    ) as stream:
-        async for text in stream.text_stream:
-            full_response += text
-            if on_chunk is not None:
-                result = on_chunk(text)
-                if isinstance(result, Awaitable):
-                    await result
+    async for event in stream:
+        if not event.choices:
+            continue
+        delta = event.choices[0].delta.content
+        if not delta:
+            continue
+        full_response += delta
+        if on_chunk is not None:
+            result = on_chunk(delta)
+            if isinstance(result, Awaitable):
+                await result
 
     return parse_review_json(full_response, pr_id=pr_id)

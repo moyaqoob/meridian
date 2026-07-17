@@ -31,13 +31,14 @@ class Settings(BaseSettings):
     github_client_id: str
     github_client_secret: SecretStr
 
-    # AI providers
+    # AI providers (NVIDIA OpenAI-compatible API for embeddings + review)
     nvidia_api_key: SecretStr
     nvidia_api_base_url: str = "https://integrate.api.nvidia.com/v1"
-    embedding_model: str = "nvidia/nv-embed-v1"
-    embedding_dimensions: int = 4096
+    embedding_model: str = "nvidia/nemotron-3-embed-1b"
+    embedding_dimensions: int = 2048
+    llm_model: str = "nvidia/nemotron-3-ultra-550b-a55b"
     openai_api_key: SecretStr | None = None
-    anthropic_api_key: SecretStr
+    anthropic_api_key: SecretStr | None = None
 
     # Security
     # Fernet symmetric key — encrypts GitHub access tokens at rest in Postgres.

@@ -69,6 +69,11 @@ def decrypt_access_token(ciphertext: str) -> str:
         raise HTTPException(status_code=500, detail="Failed to decrypt access token") from exc
 
 
+def github_oauth_redirect_uri() -> str:
+    """Must match the GitHub OAuth App callback URL (via Next.js /api rewrite)."""
+    return f"{settings.frontend_url.rstrip('/')}/api/auth/callback/github"
+
+
 async def exchange_github_code(code: str) -> tuple[str, dict]:
     async with httpx.AsyncClient() as client:
         token_response = await client.post(
@@ -78,6 +83,7 @@ async def exchange_github_code(code: str) -> tuple[str, dict]:
                 "client_id": settings.github_client_id,
                 "client_secret": settings.github_client_secret.get_secret_value(),
                 "code": code,
+                "redirect_uri": github_oauth_redirect_uri(),
             },
         )
         if not token_response.is_success:

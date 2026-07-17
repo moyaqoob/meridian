@@ -1,4 +1,4 @@
-"""Batch + single embedding via NVIDIA nv-embed-v1 (4096-dim)."""
+"""Batch + single embedding via NVIDIA nemotron-3-embed-1b (2048-dim)."""
 
 from __future__ import annotations
 

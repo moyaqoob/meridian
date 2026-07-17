@@ -8,6 +8,7 @@ Session cookie only — no JWTs in client storage.
 from __future__ import annotations
 
 import secrets
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import RedirectResponse
@@ -25,6 +26,7 @@ from core.helper import (
     exchange_github_code,
     get_current_user,
     get_optional_user,
+    github_oauth_redirect_uri,
     upsert_user,
 )
 from models.schemas import SessionOut, UserOut
@@ -46,21 +48,18 @@ async def github_auth() -> RedirectResponse:
     state = secrets.token_urlsafe(32)
     _redis().setex(f"oauth_state:{state}", OAUTH_STATE_TTL_SECONDS, "1")
 
-    url = (
-        "https://github.com/login/oauth/authorize"
-        f"?client_id={settings.github_client_id}"
-        f"&scope=repo"
-        f"&state={state}"
+    params = urlencode(
+        {
+            "client_id": settings.github_client_id,
+            "scope": "repo",
+            "state": state,
+            "redirect_uri": github_oauth_redirect_uri(),
+        }
     )
-    return RedirectResponse(url)
+    return RedirectResponse(f"https://github.com/login/oauth/authorize?{params}")
 
 
-@router.get("/callback")
-async def github_callback(
-    code: str,
-    state: str,
-    db: Session = Depends(get_db),
-) -> RedirectResponse:
+async def _handle_github_callback(code: str, state: str, db: Session) -> RedirectResponse:
     """Exchange code, upsert user, set HttpOnly session cookie."""
     redis_client = _redis()
     if not redis_client.get(f"oauth_state:{state}"):
@@ -80,7 +79,7 @@ async def github_callback(
         encrypted_token=encrypt_access_token(access_token),
     )
 
-    response = RedirectResponse(f"{settings.frontend_url}/dashboard")
+    response = RedirectResponse(f"{settings.frontend_url.rstrip('/')}/dashboard")
     response.set_cookie(
         key=SESSION_COOKIE,
         value=create_session_token(user.id),
@@ -91,6 +90,26 @@ async def github_callback(
         path="/",
     )
     return response
+
+
+@router.get("/callback/github")
+async def github_callback(
+    code: str,
+    state: str,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    """GitHub OAuth App callback (Authorization callback URL)."""
+    return await _handle_github_callback(code, state, db)
+
+
+@router.get("/callback")
+async def github_callback_alias(
+    code: str,
+    state: str,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    """Alias for older callback URL configs."""
+    return await _handle_github_callback(code, state, db)
 
 
 @router.get("/me", response_model=SessionOut)
@@ -115,4 +134,3 @@ def auth_logout(response: Response) -> dict:
 def require_session(user: User = Depends(get_current_user)) -> UserOut:
     """Protected probe — 401 if not logged in."""
     return UserOut(id=user.id, github_id=user.github_id, login=user.login)
-
