@@ -21,7 +21,16 @@ class ReviewOut(BaseModel):
     pr_type: Literal["feat", "fix", "refactor", "chore"]
     findings: List[ReviewFinding]
     model_version: str
-    timings: Dict[str, float] 
+    timings: Dict[str, float]
+
+
+class ReviewJobOut(BaseModel):
+    status: Literal["queued", "exists", "running", "complete", "error"]
+    review_id: Optional[str] = None
+    pr_id: Optional[str] = None
+    head_sha: str
+    message: str
+    review: Optional[ReviewOut] = None
 
 
 
@@ -88,6 +97,10 @@ class GitHubRepoOut(BaseModel):
     default_branch: str
     private: bool
     connected: bool
+    repo_id: Optional[str] = None
+    ingest_status: Optional[Literal["pending", "processing", "ready", "failed"]] = None
+    files_ingested: Optional[int] = None
+    ingest_error: Optional[str] = None
 
 
 class EmbedRepoRequest(BaseModel):
@@ -130,4 +143,35 @@ class IngestionStatusOut(BaseModel):
     status: Literal["pending", "processing", "ready", "failed"]
     files_ingested: Optional[int] = None
     error_message: Optional[str] = None
+
+
+# --- Structure graph ---
+
+
+class GraphNodeOut(BaseModel):
+    id: str
+    language: str
+    loc: int
+    chunk_count: int
+    external_deps: int = 0
+
+
+class GraphEdgeOut(BaseModel):
+    source: str
+    target: str
+    type: Literal["import", "reexport"]
+
+
+class GraphOut(BaseModel):
+    nodes: List[GraphNodeOut]
+    edges: List[GraphEdgeOut]
+
+
+class FileChunkOut(BaseModel):
+    id: str
+    file_path: str
+    start_line: int
+    end_line: int
+    language: str
+    content: str
 

@@ -55,16 +55,24 @@ def _get_parser(language: str) -> Parser | None:
     try:
         if language == "python":
             import tree_sitter_python as lang_mod
+
+            language_capsule = lang_mod.language()
         elif language == "typescript":
             import tree_sitter_typescript as lang_mod
+
+            language_capsule = lang_mod.language_typescript()
         elif language == "javascript":
             import tree_sitter_javascript as lang_mod
+
+            language_capsule = lang_mod.language()
         elif language == "rust":
             import tree_sitter_rust as lang_mod
+
+            language_capsule = lang_mod.language()
         else:
             return None
 
-        parser = Parser(Language(lang_mod.language()))
+        parser = Parser(Language(language_capsule))
         _parsers[language] = parser
         return parser
     except Exception:

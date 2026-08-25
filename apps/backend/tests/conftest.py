@@ -38,8 +38,10 @@ from core.database import get_db
 from core.helper import encrypt_access_token, get_current_user, get_optional_user
 from models.tables import User
 from routers.auth import router as auth_router
+from routers.health import router as health_router
 from routers.prs import router as prs_router
 from routers.repos import router as repos_router
+from routers.review_stream import router as review_stream_router
 from routers.webhook import router as webhook_router
 
 
@@ -63,15 +65,18 @@ def mock_db() -> MagicMock:
     db.all.return_value = []
     db.one_or_none.return_value = None
     db.get.return_value = None
+    db.first.return_value = None
     return db
 
 
 @pytest.fixture
 def app(mock_db: MagicMock) -> FastAPI:
     application = FastAPI()
+    application.include_router(health_router)
     application.include_router(auth_router)
     application.include_router(repos_router)
     application.include_router(prs_router)
+    application.include_router(review_stream_router)
     application.include_router(webhook_router)
 
     def _override_db():

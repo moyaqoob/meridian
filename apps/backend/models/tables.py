@@ -1,4 +1,13 @@
-from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Text, Enum
+from sqlalchemy import (
+    Column,
+    String,
+    Integer,
+    DateTime,
+    ForeignKey,
+    Text,
+    Enum,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, relationship
 from pgvector.sqlalchemy import Vector
 import uuid
@@ -45,8 +54,32 @@ class CodeChunk(Base):
     checksum = Column(String, nullable=False)
     embedding = Column(Vector(settings.embedding_dimensions), nullable=False)
 
+class CodeDependency(Base):
+    __tablename__ = "code_dependencies"
+    __table_args__ = (
+        UniqueConstraint(
+            "repo_id",
+            "from_file",
+            "to_file",
+            "edge_type",
+            name="uq_code_dependencies_edge",
+        ),
+    )
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    repo_id = Column(String, ForeignKey("repos.id"), nullable=False)
+    from_file = Column(String, nullable=False)
+    to_file = Column(String, nullable=True)  # null when edge_type = external
+    edge_type = Column(
+        Enum("import", "reexport", "external", name="dependency_edge_type_enum"),
+        nullable=False,
+    )
+    created_at = Column(DateTime, nullable=False)
+
 class PR(Base):
     __tablename__ = "prs"
+    __table_args__ = (
+        UniqueConstraint("repo_id", "number", name="uq_prs_repo_number"),
+    )
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     repo_id = Column(String, ForeignKey("repos.id"), nullable=False)
     github_pr_id = Column(Integer, nullable=False)
@@ -62,11 +95,27 @@ class PR(Base):
 
 class Review(Base):
     __tablename__ = "reviews"
+    __table_args__ = (
+        UniqueConstraint("pr_id", "head_sha", name="uq_reviews_pr_head_sha"),
+    )
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     pr_id = Column(String, ForeignKey("prs.id"), nullable=False)
-    summary = Column(Text, nullable=False)
-    structured_json = Column(Text, nullable=False)
-    model_version = Column(String, nullable=False)
+    head_sha = Column(String, nullable=False)
+    status = Column(
+        Enum(
+            "pending",
+            "running",
+            "complete",
+            "error",
+            name="review_status_enum",
+        ),
+        nullable=False,
+        default="pending",
+    )
+    summary = Column(Text, nullable=True)
+    structured_json = Column(Text, nullable=True)
+    model_version = Column(String, nullable=True)
+    error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, nullable=False)
     annotations = relationship("ReviewAnnotation", back_populates="review")
 

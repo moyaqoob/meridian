@@ -3,7 +3,10 @@
   "private": true,
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev",
+    "dev": "turbo run dev --filter=backend --filter=web",
+    "dev:stack": "pwsh -File scripts/dev.ps1",
+    "dev:worker": "cd apps/backend && uv run rq worker meridian-ingest meridian-reviews",
+    "dev:infra": "cd apps/backend && uv run python scripts/sync_postgres_env.py && docker compose up -d",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types"

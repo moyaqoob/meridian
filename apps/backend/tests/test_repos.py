@@ -51,8 +51,19 @@ def test_available_repos_marks_connected(
     auth_client: TestClient,
     mock_db: MagicMock,
     sample_github_repo: dict[str, Any],
+    test_user: User,
 ) -> None:
-    mock_db.all.return_value = [(1001,)]
+    connected = Repo(
+        id="repo-1",
+        user_id=test_user.id,
+        github_repo_id=1001,
+        full_name="tester/demo-repo",
+        default_branch="main",
+        ingest_status="ready",
+        files_ingested=42,
+        ingest_error=None,
+    )
+    mock_db.all.return_value = [connected]
 
     with patch(
         "routers.repos.github_service.list_user_repos",
@@ -73,7 +84,10 @@ def test_available_repos_marks_connected(
     assert len(body) == 2
     by_id = {row["github_repo_id"]: row for row in body}
     assert by_id[1001]["connected"] is True
+    assert by_id[1001]["ingest_status"] == "ready"
+    assert by_id[1001]["repo_id"] == "repo-1"
     assert by_id[2002]["connected"] is False
+    assert by_id[2002]["ingest_status"] is None
     assert by_id[1001]["full_name"] == "tester/demo-repo"
 
 
